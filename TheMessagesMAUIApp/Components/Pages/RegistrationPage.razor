@@ -1,0 +1,46 @@
+﻿@page "/registration"
+@using TheMessagesMAUIApp.Services
+@using TheMessagesModels
+
+<h3>RegistrationPage</h3>
+
+@if (_options == null)
+{
+    <p><em>Loading...</em></p>
+}
+
+
+else{
+<select
+@value="value"  
+@onchange="GetValue()"
+>
+    @foreach (var item in _options)
+    {
+        <option value=@item.Id>@item.Name</option>
+    }
+
+</select>
+}
+
+
+
+@code {
+    private string value;
+    private CitiesService _citiesService = new CitiesService();
+    string str;
+
+    private List<City> _options = new List<City>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _options = null;
+        _options = await _citiesService.GetCities();
+    }
+
+    private void GetValue(string value)
+    {
+        str = value;
+    }
+
+}
