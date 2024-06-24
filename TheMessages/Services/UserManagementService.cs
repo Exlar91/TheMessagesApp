@@ -1,10 +1,12 @@
 ﻿using AutoMapper;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Server.IIS.Core;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using TheMessages.EntityModels;
 using TheMessages.ModelsDTO.Users;
 using TheMessagesWebApi.ModelsDTO.ContactRequest;
+using TheMessagesWebApi.Services;
 
 namespace TheMessages.Services
 {
@@ -13,14 +15,42 @@ namespace TheMessages.Services
         private readonly DBContext _dBContext;
         private readonly UserManager<AppUser> _userManager;
         private readonly IMapper _mapper;
+        private readonly IUserService _userService;
 
 
-        public UserManagementService(DBContext dBContext, UserManager<AppUser> userManager)
+        public UserManagementService(DBContext dBContext, UserManager<AppUser> userManager, IUserService userService)
         {
             _dBContext = dBContext;
             _userManager = userManager;
+            _userService = userService;
         }
 
+        public async Task ApplyContactAsync(AppUser currentUser, string id)
+        {
+            var _id= Guid.Parse(id);
+            var request = await _dBContext.Requests.Include(u=>u.From).Include(u=>u.To).FirstAsync(r=>r.Id==_id);
+            if (request == null) 
+            {
+                throw new Exception("Request Not Found");
+            }
+            else
+            {
+                if (request.From == currentUser)
+                {
+                    throw new Exception("User Error");
+                }
+                else
+                {
+                    request.IsApplied= true;
+                    _dBContext.Requests.Update(request);
+                    await _dBContext.SaveChangesAsync();
+
+                }
+            }
+
+        }
+
+        //Создание запроса на добавление к контакты
         public async Task CreateContactRequestAsync(AppUser UserFrom, AppUser UserTo)
         {
             bool letreq=true;
@@ -86,54 +116,58 @@ namespace TheMessages.Services
             return result;
         }
 
-       
-
-        public async Task<UserSearchDTO> GetUserInfoAsync(string? id, string currentUserId)
+        public async Task<List<RequestViewDTO>> GetRequestsAsync(AppUser appUser)
         {
-            
-            int userIdToGet = Convert.ToInt32(currentUserId);
+            List<RequestViewDTO> result = new List<RequestViewDTO>();
 
-            if (id != null)
+            var res = from r in (_dBContext.Requests
+                      .Include(u => u.From)
+                      .Include(u => u.From.LivingPlace)
+                      .Include(u => u.To))
+                      .Include(u => u.To.LivingPlace)
+                      .ToList()
+                     where r.From == appUser || r.To == appUser
+                     select (r);
+
+            foreach (var req in res) 
             {
-                userIdToGet = Convert.ToInt32(id);
-            }
-            
-            var user = await _userManager.Users.Include(x => x.LivingPlace).FirstOrDefaultAsync(u => (u.Id) == userIdToGet);
-
-            var usertoreturn = _mapper.Map<UserSearchDTO>(user);
-            usertoreturn.DisplayName = user.Name + " " + user.SecondName;
-            usertoreturn.CurrentUser = true;
-            usertoreturn.City = user.LivingPlace.Name;
-
-            if (id != null)
-            {
-                if (id != currentUserId)
+                RequestViewDTO request = new RequestViewDTO();
+                request.Id = req.Id;
+                request.isApplied = req.IsApplied;
+                if (req.From == appUser)
                 {
-                    usertoreturn.CurrentUser = false;
+                    request.isInput = false;
+                    request.User = await _userService.GetUserDTOAsync(req.To, appUser);
+                }
+
+                else 
+                {
+                    request.isInput = true;
+                    request.User = await _userService.GetUserDTOAsync(req.From, appUser);
+                }
+
+                result.Add(request);
+            }
+            return result.ToList();
+        }
+
+        public async Task<List<UserSearchDTO>> GetUsersWithCreatedContactRequest(AppUser appUser)
+        {
+            List<UserSearchDTO> result = new List<UserSearchDTO>();
+
+            var list = from r in _dBContext.Requests
+                       where (r.From == appUser || r.To == appUser)
+                       select r;
+
+            foreach (var req in list) 
+            {
+                var user = new UserSearchDTO();
+                if (req.From == appUser) 
+                {
+                    user = _mapper.Map<UserSearchDTO>(req.To);
+
                 }
             }
-
-
-
-            return usertoreturn;
-        }
-
-
-
-        public async Task<List<FriendRequest>> GetRequestsAsync(AppUser appUser)
-        {          
-            var requests = _dBContext.Requests.Where(r=>r.To == appUser).ToList();
-
-            return requests;
-        }
-
-        public Task<List<RequestViewDTO>> GetRequestsToViewAsync(AppUser appUser)
-        {
-            var RequestsDTO = new List<RequestViewDTO>();
-
-
-
-
         }
     }
 }

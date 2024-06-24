@@ -6,6 +6,7 @@ using TheMessages.EntityModels;
 using TheMessages.Options;
 using TheMessages.Services;
 using TheMessagesService.Profiles;
+using TheMessagesWebApi.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,6 +19,7 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddTransient<IUserManagementService, UserManagementService>();
 builder.Services.AddTransient<ICitiesService, CitiesService>();
 builder.Services.AddTransient<IImageService, ImageService>();
+builder.Services.AddTransient<IUserService, UserService>();
 
 string connection = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<DBContext>(options => options.UseSqlServer(connection));

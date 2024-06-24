@@ -8,6 +8,8 @@ using System.Security.Claims;
 using TheMessages.EntityModels;
 using TheMessages.ModelsDTO.Users;
 using TheMessages.Services;
+using TheMessagesWebApi.ModelsDTO.ContactRequest;
+using TheMessagesWebApi.Services;
 
 namespace TheMessages.Controllers
 {
@@ -19,114 +21,78 @@ namespace TheMessages.Controllers
         private readonly IUserManagementService _userManagementService;
         private readonly IMapper _mapper;
         public readonly ICitiesService _cityService;
+        public readonly IUserService _userService;
 
 
         public UsersManagementController(UserManager<AppUser> userManager,
                                          IUserManagementService userManagementService,
                                          IMapper mapper,
-                                         ICitiesService cityService)
+                                         ICitiesService cityService,
+                                         IUserService userService
+                                         )
         {
             _userManager = userManager;
             _userManagementService = userManagementService;
             _mapper = mapper;
             _cityService = cityService;
+            _userService = userService;
 
         }
 
 
 
+        //Вывод информации и пользователе
         [HttpGet("UserInfo")]
         [Authorize]
-        public async Task<ActionResult<UserSearchDTO>> GetUserInfo(string? id)
+        public async Task<ActionResult<UserSearchDTO>> GetUserInfo(int? id)
         {
             //Получение ID вошедшего профиля из JWT
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-
-
-            if (userId == null)
+            var currentUserId = Convert.ToInt32(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+            if (currentUserId == null)
             {
-                return BadRequest("User ID not found in claims.");
+                return NotFound();
             }
 
-            int userIdToGet = Convert.ToInt32(userId);
+            var currentUser = await _userManager.Users.Include(u => u.LivingPlace).FirstOrDefaultAsync(i => i.Id == currentUserId);
 
-            if (id != null)
+            AppUser user=null;
+            if (id!=null)
             {
-                userIdToGet = Convert.ToInt32(id);
-            }
+                user = await _userManager.Users.Include(u => u.LivingPlace).FirstOrDefaultAsync(i => i.Id == id);
 
-
-            var user = await _userManager.Users.Include(x=>x.LivingPlace).FirstOrDefaultAsync(u=>(u.Id)==userIdToGet);
-            
-            if (user == null)
-            {
-                return NotFound("User not found.");
-            }
-
-            
-            var usertoreturn = _mapper.Map<UserSearchDTO>(user);
-            usertoreturn.DisplayName = user.Name+" "+user.SecondName;
-            usertoreturn.CurrentUser = true;
-            usertoreturn.City = user.LivingPlace.Name;
-            
-            if (id != null)
-            {
-                if (id != userId) 
+                if (user == null) 
                 {
-                    usertoreturn.CurrentUser = false;
-                }        
-            }
-
-            return Ok(usertoreturn);
+                    return NotFound();
+                }
+            }            
+            return await _userService.GetUserDTOAsync(user, currentUser);
+          
         }
-
-        //Получение списка всех подтвержденных котакттов
-        [HttpGet("GetContacts")]
-        [Authorize]
-        public async Task<ActionResult<List<UserSearchDTO>>> GetFriends()
-        {
-            //Получение ID пользователя из токена
-            var userId = User.FindFirst(ClaimTypes.Name)?.Value;
-
-            if (userId == null)
-            {
-                return BadRequest("User ID not found in claims.");
-            }
-
-            var user = await _userManager.FindByNameAsync(userId);
-
-            if (user == null)
-            {
-                return NotFound("User not found.");
-            }
-
-            var result = await _userManagementService.GetContactsAsync(user);
-
-            return (Ok(result));
-
-
-        }
-
 
         //Создание запроса на установления контакта
         [HttpPost("CreateContactRequest")]
         [Authorize]
-        public async Task<ActionResult> ContactRequest(string id)
+        public async Task<ActionResult> CreateContactRequest(string id)
         {
 
-            var userId = User.FindFirst(ClaimTypes.Name)?.Value;
+            string userId = User.FindFirst(ClaimTypes.Name)?.Value;
 
             if (userId == null)
             {
                 return BadRequest("User ID not found in claims.");
             }
+
+            if (userId == id)
+            {
+                return BadRequest("Selfrequest");
+            }
+
             var userFrom = await _userManager.FindByNameAsync(userId);
 
             if (userFrom == null)
             {
                 return NotFound("User not found.");
             }
-
  
             var userTo = await _userManager.FindByIdAsync(id);
             if (userTo == null)
@@ -134,46 +100,53 @@ namespace TheMessages.Controllers
                 return NotFound("User not found.");
             }
 
-            if (userFrom == userTo)
+            if (userTo == userFrom)
             {
-                return BadRequest("Selfie request");
+                return BadRequest("Selfrequest");
+            }
+
+            try
+            {
+                await _userManagementService.CreateContactRequestAsync(userFrom, userTo);
+                return Ok();
+            }
+
+            catch (Exception ex) 
+            {
+                return BadRequest("такой запрос существует");
+            }
+  
+        }
+
+        //Вывод списка всех неподтвержденных контактов
+        [HttpGet("GetContactRequests")]
+        [Authorize]
+        public async Task<ActionResult<List<RequestViewDTO>>> GetContactRequests()
+        {
+            var userId = User.FindFirst(ClaimTypes.Name)?.Value;
+
+            
+            if (userId == null)
+            {
+                return BadRequest("User ID not found in claims.");
+            }            
+
+            var userFrom = await _userManager.FindByNameAsync(userId);
+
+            if (userFrom == null)
+            {
+                return NotFound("User not found.");
+            }
+ 
+            {
+                return Ok(await _userManagementService.GetRequestsAsync(userFrom));
             }
 
 
-            await _userManagementService.CreateContactRequestAsync(userFrom, userTo);
 
-            return Ok();
         }
 
-        //[HttpGet("GetFriendRequests")]
-        //[Authorize]
-        //public async Task<ActionResult<List<FriendRequest>>> GetFriendRequests()
-        //{
-        //    var userId = User.FindFirst(ClaimTypes.Name)?.Value;
-
-        //    if (userId == null)
-        //    {
-        //        return BadRequest("User ID not found in claims.");
-        //    }
-
-        //    var user = await _userManager.FindByNameAsync(userId);
-
-        //    if (user == null)
-        //    {
-        //        return NotFound("User not found.");
-        //    }
-
-        //    var toreturn = from item in _dbContext.Requests.Include(u => u.From)
-        //                   where item.To == user
-        //                   where item.IsApplied == false
-        //                   select item;
-
-        //    return Ok(toreturn);
-
-        //}
-
-
-
+        //Поиск пользователей
         [HttpGet("UserSearch")]
         //[Authorize]
         public async Task<ActionResult<List<UserSearchDTO>>> UsersSearch(string? request)
@@ -207,50 +180,36 @@ namespace TheMessages.Controllers
         }
 
 
+        [HttpPut("ApplyContactRequest")]
+        [Authorize]
+        public async Task<ActionResult> ApplyRequest(string id)
+        {
+            var currentUserName = User.FindFirst(ClaimTypes.Name)?.Value;
 
+            if (currentUserName == null)
+            {
+                return BadRequest("User ID not found in claims.");
+            }
 
-        //[HttpGet("GetFriendRequests")]
-        //[Authorize]
-        //public async Task<ActionResult<List<FriendRequest>>> GetFriendRequests()
-        //{
-        //    var userId = User.FindFirst(ClaimTypes.Name)?.Value;
+            var currentUser = await _userManager.FindByNameAsync(currentUserName);
 
-        //    if (userId == null)
-        //    {
-        //        return BadRequest("User ID not found in claims.");
-        //    }
+            if (currentUser == null) 
+            {
+                return BadRequest("User does no exist");
+            }
 
-        //    var user = await _userManager.FindByNameAsync(userId);
+            try
+            {
+                await _userManagementService.ApplyContactAsync(currentUser, id);
+                return Ok();
+            }
 
-        //    if (user == null)
-        //    {
-        //        return NotFound("User not found.");
-        //    }
+            catch (Exception ex) 
+            {
+                return BadRequest();
+            }
 
-        //    var toreturn = from item in _dbContext.Requests.Include(u => u.From)
-        //                   where item.To == user
-        //                   where item.IsApplied == false
-        //                   select item;
-
-        //    return Ok(toreturn);
-
-        //}
-
-        //[HttpPost("ApplyRequest")]
-        //[Authorize]
-
-        //public async Task<ActionResult> ApplyRequest(Guid id)
-        //{
-        //    var req = _dbContext.Requests
-        //              .Where(x => x.Id == id)
-        //              .FirstOrDefault();
-        //    req.IsApplied = true;
-        //    _dbContext.Update(req);
-        //    _dbContext.SaveChanges();
-
-        //    return Ok();
-        //}
-
+        }
 
 
     }

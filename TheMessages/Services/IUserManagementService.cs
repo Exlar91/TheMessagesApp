@@ -7,10 +7,11 @@ namespace TheMessages.Services
 {
     public interface IUserManagementService
     {
-        public Task<List<UserSearchDTO>> GetContactsAsync(AppUser user);
-        public Task CreateContactRequestAsync(AppUser UserFrom, AppUser UserTo);
-        public Task<UserSearchDTO> GetUserInfoAsync(string? id, string currentUserId);
-        public Task<List<FriendRequest>> GetRequestsAsync(AppUser appUser);
-        public Task<List<RequestViewDTO>> GetRequestsToViewAsync(AppUser appUser);
+        Task<List<UserSearchDTO>> GetContactsAsync(AppUser user);
+        Task CreateContactRequestAsync(AppUser UserFrom, AppUser UserTo);
+        Task<List<RequestViewDTO>> GetRequestsAsync(AppUser appUser);
+        Task ApplyContactAsync(AppUser currentUser, string id);
+        Task <List<UserSearchDTO>> GetUsersWithCreatedContactRequest(AppUser appUser);
+
     }
 }
